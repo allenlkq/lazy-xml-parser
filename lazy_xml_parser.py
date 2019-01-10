@@ -1,7 +1,7 @@
-from typing import Tuple, Union, Iterator
+from typing import Tuple, Union, Iterator, List
 from xml.etree.ElementTree import XMLPullParser, Element
 
-_chunk_size : int = 1024
+_chunk_size: int = 1024
 
 
 def parse(xml_text: Union[bytes, Iterator[bytes]], path: Tuple = ('feed', 'entry')) -> Iterator[Union[dict, str]]:
@@ -23,7 +23,7 @@ def parse(xml_text: Union[bytes, Iterator[bytes]], path: Tuple = ('feed', 'entry
     tag_stack: [str] = []
     xml_parser = XMLPullParser(events=('start', 'end'))
 
-    handle_partial_xml = _get_partial_xml_handler(path, tag_stack)
+    handle_partial_xml = _get_partial_xml_handler(path)
 
     for chunk in xml_chunks:
         xml_parser.feed(chunk)
@@ -31,28 +31,30 @@ def parse(xml_text: Union[bytes, Iterator[bytes]], path: Tuple = ('feed', 'entry
             yield _elem_to_dict_or_str(element)
 
 
-def _get_partial_xml_handler(path: list, tag_stack: list):
+def _get_partial_xml_handler(path: List[str]):
 
-    root: Element = None
+    element_stack: List[Element] = []
 
     def _handle(parser: XMLPullParser):
         events = parser.read_events()
-        nonlocal root
-        if root is None:
-            _, root = next(events)
-            tag_stack.append(_simplify(root.tag))
+        nonlocal element_stack
+
         for action, elem in events:
             elem: Element
             if action == 'start':
-                tag_stack.append(_simplify(elem.tag))
+                element_stack.append(elem)
             elif action == 'end':
-                last_tag = tag_stack.pop()
+                last_tag = _simplify(element_stack[-1].tag)
                 current_tag = _simplify(elem.tag)
                 if last_tag != current_tag:
                     raise Exception('unmatched tag, start: {}, end: {}'.format(last_tag, current_tag))
-                if last_tag == path[-1:][0] and tag_stack == path[:-1]:
+                if path == list(map(lambda x: _simplify(x.tag), element_stack)):
                     yield elem
-                    root.clear()
+
+                element_stack = element_stack[:-1]
+                if len(element_stack) > 0:
+                    element_stack[-1].clear()
+
     return _handle
 
 
